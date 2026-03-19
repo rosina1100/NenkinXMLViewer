@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>年金機構 XML ビューア</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=Noto+Serif+JP:wght@400;500;600;700&display=swap');
+  :root {
+    --bg: #f5f3ef; --card-bg: #ffffff; --text: #1a1a1a;
+    --text-muted: #6b6560; --border: #d4cfc8; --border-dark: #8a8279;
+    --accent: #1a4b7a; --accent-light: #e8eff6;
+    --highlight: #c53d43; --highlight-bg: #fdf2f2;
+    --table-header: #3a3530; --table-stripe: #faf9f7;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Noto Sans JP', -apple-system, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; line-height: 1.7;
+  }
+</style>
+<style>
+  /* ===== Welcome Screen ===== */
+  .welcome { display:flex; align-items:center; justify-content:center; min-height:100vh; text-align:center; }
+  .welcome-inner { max-width:400px; }
+  .welcome-icon { font-size:48px; margin-bottom:16px; opacity:0.4; }
+  .welcome-title { font-family:'Noto Serif JP',serif; font-size:20px; font-weight:600; margin-bottom:8px; }
+  .welcome-sub { font-size:13px; color:var(--text-muted); line-height:1.8; }
+
+  /* ===== Mode Badge & Toggle ===== */
+  .render-mode-bar {
+    display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;
+  }
+  .render-mode-badge {
+    display:inline-block; font-size:11px; font-weight:500;
+    padding:3px 10px; border-radius:4px;
+  }
+  .render-mode-badge.xsl { background:#e6f4ea; color:#1a7a3a; }
+  .render-mode-badge.builtin { background:#e8eff6; color:#1a4b7a; }
+  .toggle-btn {
+    font-size:11px; font-weight:500; padding:4px 12px; border-radius:4px;
+    border:1px solid var(--border); background:var(--card-bg); color:var(--accent);
+    cursor:pointer; transition:all 0.15s;
+  }
+  .toggle-btn:hover { background:var(--accent-light); border-color:var(--accent); }
+
+  /* ===== 標準報酬決定通知書用テーブル ===== */
+  .notify-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .notify-table thead th { background:var(--table-header); color:#fff; font-weight:500; font-size:12px; padding:8px 12px; text-align:left; }
+  .notify-table tbody td { padding:10px 12px; border-bottom:1px solid var(--border); }
+  .notify-table tbody tr:nth-child(even) { background:var(--table-stripe); }
+
+  /* ===== 届書写し用 ===== */
+  .todoke-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; border-bottom:1px solid var(--border); }
+  .todoke-item { padding:12px 24px; font-size:13.5px; display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid var(--border); }
+  .todoke-item:nth-child(odd) { border-right:1px solid var(--border); }
+  .todoke-count { font-weight:600; font-size:15px; }
+  .todoke-count.zero { color:var(--text-muted); }
+
+  /* ===== Container ===== */
+  .report-container { margin:0 auto; padding:32px 24px 64px; }
+
+  /* ===== XSL Rendered ===== */
+  .xsl-rendered-card {
+    background:var(--card-bg); border-radius:10px; box-shadow:var(--shadow);
+    overflow:auto; border:1px solid var(--border); padding:32px; margin-bottom:24px;
+  }
+  .xsl-rendered-card table { border-collapse:collapse; font-size:14px; }
+  .xsl-rendered-card td,.xsl-rendered-card th { padding:6px 10px; border:1px solid var(--border); }
+  .xsl-rendered-card a { color:var(--accent); word-break:break-all; cursor:pointer; }
+  /* ===== Built-in Report Card ===== */
+  .report-card { background:var(--card-bg); border-radius:10px; box-shadow:var(--shadow); overflow:hidden; border:1px solid var(--border); margin-bottom:24px; max-width:860px; margin-left:auto; margin-right:auto; }
+  .report-header { padding:36px 40px 28px; text-align:center; border-bottom:2px solid var(--table-header); position:relative; }
+  .report-header::before { content:''; position:absolute; top:0; left:0; right:0; height:4px; background:linear-gradient(90deg,var(--accent),var(--highlight)); }
+  .report-doc-title { font-family:'Noto Serif JP',serif; font-size:26px; font-weight:700; letter-spacing:0.15em; margin-bottom:6px; }
+  .report-doc-sub { font-size:15px; font-weight:500; color:var(--accent); }
+  .report-meta { display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid var(--border); }
+  .meta-section { padding:20px 32px; }
+  .meta-section:first-child { border-right:1px solid var(--border); }
+  .meta-label { font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:0.08em; margin-bottom:8px; }
+  .meta-row { display:flex; justify-content:space-between; align-items:baseline; padding:3px 0; font-size:13.5px; }
+  .meta-key { color:var(--text-muted); }
+  .meta-val { font-weight:500; text-align:right; }
+  .amount-section { padding:28px 32px; }
+  .amount-section-title { font-family:'Noto Serif JP',serif; font-size:15px; font-weight:600; margin-bottom:16px; padding-left:12px; border-left:3px solid var(--accent); }
+  .amount-table { width:100%; border-collapse:collapse; font-size:14px; }
+  .amount-table thead th { background:var(--table-header); color:#fff; font-weight:500; font-size:12.5px; padding:10px 16px; text-align:left; }
+  .amount-table thead th:last-child { text-align:right; }
+  .amount-table tbody td { padding:12px 16px; border-bottom:1px solid var(--border); }
+  .amount-table tbody tr:nth-child(even) { background:var(--table-stripe); }
+  .amount-table tbody td:last-child { text-align:right; font-weight:500; font-size:15px; }
+  .amount-table tbody tr.total-row { background:var(--highlight-bg)!important; border-top:2px solid var(--highlight); }
+  .amount-table tbody tr.total-row td { font-weight:700; border-bottom:none; color:var(--highlight); }
+  .amount-table tbody tr.total-row td:last-child { font-size:18px; }
+  .amount-table tbody tr.zero-row td:last-child { color:var(--text-muted); }
+  .payment-bar { display:flex; justify-content:space-between; padding:20px 32px; background:var(--accent-light); border-top:1px solid var(--border); flex-wrap:wrap; gap:12px; }
+  .payment-item { display:flex; align-items:baseline; gap:8px; font-size:13.5px; }
+  .payment-label { color:var(--text-muted); }
+  .payment-value { font-weight:600; }
+  .payment-value.deadline { color:var(--highlight); font-size:15px; }
+  .notice-section { padding:20px 32px; border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); line-height:1.8; }
+  .notice-section a { color:var(--accent); word-break:break-all; }
+
+  /* ===== Kagami ===== */
+  .kagami-card { background:var(--card-bg); border-radius:10px; box-shadow:var(--shadow); overflow:hidden; border:1px solid var(--border); margin-bottom:24px; max-width:860px; margin-left:auto; margin-right:auto; }
+  .kagami-header { padding:36px 40px 24px; text-align:center; border-bottom:2px solid var(--table-header); position:relative; }
+  .kagami-header::before { content:''; position:absolute; top:0; left:0; right:0; height:4px; background:linear-gradient(90deg,var(--accent),#4a7a5a); }
+  .kagami-doc-title { font-family:'Noto Serif JP',serif; font-size:24px; font-weight:700; letter-spacing:0.12em; margin-bottom:4px; }
+  .kagami-secrecy { display:inline-block; background:var(--highlight); color:#fff; font-size:11px; font-weight:600; padding:2px 12px; border-radius:3px; letter-spacing:0.1em; margin-bottom:12px; }
+  .kagami-date { font-size:14px; color:var(--text-muted); font-weight:500; }
+  .kagami-from-to { display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid var(--border); }
+  .kagami-ft-section { padding:20px 32px; }
+  .kagami-ft-section:first-child { border-right:1px solid var(--border); }
+  .kagami-ft-label { font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:0.08em; margin-bottom:6px; }
+  .kagami-ft-name { font-size:15px; font-weight:600; }
+  .kagami-ft-aff { font-size:13px; color:var(--text-muted); }
+  .kagami-body { padding:28px 32px; }
+  .kagami-body p { font-size:14px; margin-bottom:12px; line-height:1.8; }
+  .kagami-attachment { margin:16px 0; padding:14px 20px; background:var(--accent-light); border-radius:6px; border-left:3px solid var(--accent); cursor:pointer; transition:background 0.15s; }
+  .kagami-attachment:hover { background:#d8e8f4; }
+  .kagami-att-label { font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:4px; }
+  .kagami-att-name { font-size:13.5px; font-weight:500; color:var(--accent); }
+  .kagami-notice { padding:20px 32px; border-top:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.9; }
+  .kagami-notice a { color:var(--accent); word-break:break-all; }
+
+  /* ===== CSV Table ===== */
+  .csv-card { background:var(--card-bg); border-radius:10px; box-shadow:var(--shadow); overflow:auto; border:1px solid var(--border); margin-bottom:24px; padding:24px; }
+  .csv-title { font-family:'Noto Serif JP',serif; font-size:18px; font-weight:600; margin-bottom:16px; }
+  .csv-table { width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap; }
+  .csv-table thead th { background:var(--table-header); color:#fff; padding:8px 12px; text-align:left; font-weight:500; position:sticky; top:0; }
+  .csv-table tbody td { padding:6px 12px; border-bottom:1px solid var(--border); }
+  .csv-table tbody tr:nth-child(even) { background:var(--table-stripe); }
+
+  /* ===== 印刷用スタイル ===== */
+  @media print {
+    /* A4用紙サイズとマージンを明示指定 */
+    @page {
+      size: A4;
+      margin: 15mm 12mm 15mm 12mm;
+    }
+
+    /* 背景色と影を除去し、余白を最適化 */
+    html, body {
+      background: #fff !important; margin: 0; padding: 0;
+      min-height: 0 !important; height: auto !important;
+      overflow: visible !important;
+      font-size: 12px;
+    }
+    .welcome { display: none !important; }
+    .report-container { padding: 0; margin: 0; min-height: 0 !important; }
+    #reportArea { min-height: 0 !important; }
+    #reportContent { min-height: 0 !important; }
+
+    /* カード系の装飾を簡素化（複数ページにまたがることを許可） */
+    .report-card, .kagami-card, .csv-card, .xsl-rendered-card {
+      box-shadow: none; border-radius: 0; border: 1px solid #ccc;
+      margin: 0;
+      min-height: 0 !important;
+      /* page-break-inside: avoid は削除 — 長いカードは複数ページに自然にまたがらせる */
+    }
+
+    /* ===== セクション単位の改ページ制御 ===== */
+    /* ヘッダー部分はページ途中で切れないようにする */
+    .report-header, .kagami-header {
+      page-break-inside: avoid;
+      page-break-after: avoid;
+    }
+    /* メタ情報セクションもヘッダーと一緒に保持 */
+    .report-meta, .kagami-from-to {
+      page-break-inside: avoid;
+    }
+    /* セクションタイトル直後で改ページしない */
+    .amount-section-title {
+      page-break-after: avoid;
+    }
+    /* 金額セクション内の短いテーブル（合計行等）は分割しない */
+    .amount-section {
+      page-break-before: auto;
+    }
+    /* 支払い情報バーは分割しない */
+    .payment-bar {
+      page-break-inside: avoid;
+    }
+    /* お知らせセクションは分割しない */
+    .notice-section, .kagami-notice {
+      page-break-inside: avoid;
+    }
+    /* 鏡文の本文は分割しない */
+    .kagami-body {
+      page-break-inside: avoid;
+    }
+    /* 届書グリッドは分割しない */
+    .todoke-grid {
+      page-break-inside: avoid;
+    }
+
+    /* ===== テーブルの改ページ制御 ===== */
+    /* 各ページでテーブルヘッダーを繰り返す */
+    thead { display: table-header-group; }
+    tfoot { display: table-footer-group; }
+    /* テーブル行は途中で切れないようにする */
+    tr { page-break-inside: avoid; }
+    /* テーブル本体は自然にページまたぎを許可 */
+    tbody { page-break-inside: auto; }
+
+    /* ===== 孤立行（orphan/widow）制御 ===== */
+    /* ページ末尾/先頭に1-2行だけ残るのを防ぐ */
+    p, td, th { orphans: 3; widows: 3; }
+
+    /* ===== XSL変換後のコンテンツ ===== */
+    .xsl-rendered-card {
+      overflow: visible;
+      max-width: 100%;
+    }
+    .xsl-rendered-card table {
+      max-width: 100%;
+      font-size: 10px;
+      table-layout: auto;
+      word-wrap: break-word;
+    }
+
+    /* ===== CSV表示 ===== */
+    .csv-card { overflow: visible; padding: 0; }
+    .csv-table {
+      max-width: 100%;
+      font-size: 9px;
+      table-layout: auto;
+      word-wrap: break-word;
+    }
+
+    /* モードバッジとトグルボタンは印刷不要 */
+    .render-mode-bar { display: none !important; }
+
+    /* リンクの下線を除去 */
+    a { color: #000 !important; text-decoration: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 初期画面（ファイルが開かれるまで表示） -->
+<div class="welcome" id="welcomeScreen">
+  <div class="welcome-inner">
+    <div class="welcome-icon">📄</div>
+    <div class="welcome-title">年金機構 XML ビューア</div>
+    <div class="welcome-sub">
+      XMLファイルを右クリック →<br>
+      「このアプリケーションで開く」で表示します。<br>
+      またはウィンドウにドラッグ＆ドロップしてください。
+    </div>
+  </div>
+</div>
+
+<!-- 帳票表示エリア -->
+<div class="report-container" id="reportArea" style="display:none">
+  <div id="reportContent"></div>
+</div>
+
+<script>
+// ===== グローバル変数 =====
+let currentDirPath = '';  // 現在開いているファイルのディレクトリ
+let currentXmlDoc = null;   // 現在のXMLドキュメント（トグル用に保持）
+let currentXslHtml = null;  // XSL変換結果HTML（トグル用に保持）
+let currentFileName = '';   // 現在のファイル名
+let currentRenderMode = 'builtin'; // 'xsl' or 'builtin'
+
+// ===== Swiftから呼ばれる関数: XMLファイルを受け取る =====
+function receiveFileFromSwift(xmlBase64, xslBase64, fileName, dirPath) {
+  currentDirPath = dirPath;
+  currentFileName = fileName;
+  const xmlText = b64toUtf8(xmlBase64);
+  const xslText = xslBase64 ? b64toUtf8(xslBase64) : null;
+
+  const parser = new DOMParser();
+  currentXmlDoc = parser.parseFromString(xmlText, 'application/xml');
+
+  // XSL変換結果を保持
+  currentXslHtml = null;
+  if (xslText) {
+    try {
+      const xsl = parser.parseFromString(xslText, 'application/xml');
+      const processor = new XSLTProcessor();
+      processor.importStylesheet(xsl);
+      const result = processor.transformToDocument(currentXmlDoc);
+      const serializer = new XMLSerializer();
+      let resultHtml = serializer.serializeToString(result);
+      const bodyMatch = resultHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+      if (bodyMatch) resultHtml = bodyMatch[1];
+      currentXslHtml = resultHtml;
+    } catch(e) {
+      console.warn('XSL変換失敗:', e);
+    }
+  }
+
+  // ビルトイン対応している文書はビルトインをデフォルトにする
+  const hasBuiltin = canRenderBuiltin(currentXmlDoc);
+  if (hasBuiltin) {
+    currentRenderMode = 'builtin';
+  } else if (currentXslHtml) {
+    currentRenderMode = 'xsl';
+  } else {
+    currentRenderMode = 'builtin';
+  }
+
+  renderCurrentMode();
+}
+
+// ===== ビルトイン対応チェック =====
+function canRenderBuiltin(xml) {
+  if (xml.getElementsByTagName('shakaiHokenRyougakuList')[0]) return true;
+  if (xml.getElementsByTagName('DOC')[0]) return true;
+  if (xml.documentElement && xml.documentElement.tagName === 'KihonHokenRyouSanshutsuUchiwakeSho') return true;
+  if (xml.documentElement && xml.documentElement.tagName === 'ZougenUchiwakeSho') return true;
+  if (xml.documentElement && xml.documentElement.tagName === 'N7130001') return true;
+  if (xml.documentElement && xml.documentElement.tagName === 'DataRoot') return true;
+  return false;
+}
+
+// ===== XSL/ビルトイン切り替え =====
+function toggleRenderMode() {
+  currentRenderMode = (currentRenderMode === 'xsl') ? 'builtin' : 'xsl';
+  renderCurrentMode();
+}
+
+function renderCurrentMode() {
+  let html = '';
+  const hasBuiltin = canRenderBuiltin(currentXmlDoc);
+  const hasXsl = !!currentXslHtml;
+
+  // トグルバーを構成
+  let toggleBar = '<div class="render-mode-bar">';
+
+  if (currentRenderMode === 'xsl' && hasXsl) {
+    toggleBar += '<span class="render-mode-badge xsl">XSL変換（公式レイアウト）</span>';
+    if (hasBuiltin) {
+      toggleBar += '<button class="toggle-btn" onclick="toggleRenderMode()">ビルトイン表示に切替</button>';
+    }
+    html = toggleBar + '</div><div class="xsl-rendered-card">' + currentXslHtml + '</div>';
+  } else {
+    toggleBar += '<span class="render-mode-badge builtin">ビルトイン表示</span>';
+    if (hasXsl) {
+      toggleBar += '<button class="toggle-btn" onclick="toggleRenderMode()">XSL表示に切替</button>';
+    }
+    html = toggleBar + '</div>' + renderBuiltin(currentXmlDoc, currentFileName);
+  }
+
+  showReport(html);
+}
+
+// ===== CSVパーサー（ダブルクォート内のカンマ・改行に対応） =====
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (i + 1 < text.length && text[i + 1] === '"') {
+          field += '"'; i++; // エスケープされたダブルクォート
+        } else {
+          inQuotes = false; // クォート終了
+        }
+      } else {
+        field += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        row.push(field); field = '';
+      } else if (ch === '\r') {
+        // \r\n の場合は \n と一緒にスキップ
+        if (i + 1 < text.length && text[i + 1] === '\n') i++;
+        row.push(field); field = '';
+        rows.push(row); row = [];
+      } else if (ch === '\n') {
+        row.push(field); field = '';
+        rows.push(row); row = [];
+      } else {
+        field += ch;
+      }
+    }
+  }
+  // 最後のフィールド/行を追加
+  if (field || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
+}
+
+// ===== Swiftから呼ばれる関数: CSVファイルを受け取る =====
+function receiveCSVFromSwift(csvBase64, fileName) {
+  const text = b64toUtf8(csvBase64);
+  const lines = parseCSV(text);
+  if (lines.length === 0) return;
+
+  const headers = lines[0];
+  const rows = lines.slice(1);
+
+  let tableHtml = '<table class="csv-table"><thead><tr>';
+  headers.forEach(h => tableHtml += `<th>${esc(h)}</th>`);
+  tableHtml += '</tr></thead><tbody>';
+  rows.forEach(row => {
+    tableHtml += '<tr>';
+    row.forEach(cell => tableHtml += `<td>${esc(cell)}</td>`);
+    tableHtml += '</tr>';
+  });
+  tableHtml += '</tbody></table>';
+
+  const html = `<div class="csv-card">
+    <div class="csv-title">📊 ${esc(fileName)}</div>
+    ${tableHtml}
+  </div>`;
+
+  showReport(html);
+}
+
+// ===== 表示切替 =====
+function showReport(html) {
+  document.getElementById('welcomeScreen').style.display = 'none';
+  const area = document.getElementById('reportArea');
+  area.style.display = 'block';
+  document.getElementById('reportContent').innerHTML = html;
+
+  // XSL変換で生成された <a href="ファイル名.xml"> 等のリンクを
+  // requestFile() 呼び出しに書き換える
+  rewriteFileLinks();
+}
+
+function rewriteFileLinks() {
+  const container = document.getElementById('reportContent');
+  const links = container.querySelectorAll('a[href]');
+  links.forEach(link => {
+    const href = link.getAttribute('href');
+    if (!href) return;
+    // XML/CSV/PDFファイルへのリンクをrequestFileに書き換える
+    const lower = href.toLowerCase();
+    if (lower.endsWith('.xml') || lower.endsWith('.csv') || lower.endsWith('.pdf')) {
+      // ファイル名部分だけを取得（パスが含まれている場合は末尾を使う）
+      const fileName = href.split('/').pop();
+      link.removeAttribute('target');
+      link.setAttribute('href', 'javascript:void(0)');
+      link.setAttribute('onclick', "requestFile('" + fileName.replace(/'/g, "\\'") + "')");
+    }
+  });
+}
+
+// ===== リンククリック → Swiftにファイル要求 =====
+function requestFile(fileName) {
+  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.openFile) {
+    window.webkit.messageHandlers.openFile.postMessage({
+      fileName: fileName,
+      dirPath: currentDirPath
+    });
+  }
+}
+
+// ===== ユーティリティ =====
+// Base64 → UTF-8文字列 のデコード（atobはバイナリ文字列しか返さないため）
+function b64toUtf8(base64) {
+  const binStr = atob(base64);
+  const bytes = Uint8Array.from(binStr, c => c.charCodeAt(0));
+  return new TextDecoder('utf-8').decode(bytes);
+}
+function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function getTag(p,t) { const e=p.getElementsByTagName(t)[0]; return e?e.textContent.trim():''; }
+function cleanBr(s) { return s.replace(/&lt;br\/&gt;/g,' ').replace(/<br\s*\/?>/g,' ').trim(); }
+function decodeHtml(s) {
+  return s.replace(/&lt;br\/&gt;/g,'<br>').replace(/&lt;br&gt;/g,'<br>')
+    .replace(/&lt;a href="([^"]*)"&gt;(.*?)&lt;\/a&gt;/g,'<a href="$1" target="_blank">$2</a>');
+}
+function fmtAmt(s) { if(!s||s==='0') return '0'; return s.replace(/,/g,'').replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+function isZero(s) { return !s||s.replace(/,/g,'')==='0'; }
+
+// ===== ビルトイン表示（XSLなし時のフォールバック） =====
+function renderBuiltin(xml, fileName) {
+  if (xml.getElementsByTagName('shakaiHokenRyougakuList')[0]) return renderHokenryou(xml);
+  if (xml.getElementsByTagName('DOC')[0]) return renderKagami(xml);
+  const root = xml.documentElement ? xml.documentElement.tagName : '';
+  if (root === 'KihonHokenRyouSanshutsuUchiwakeSho') return renderKihonUchiwake(xml);
+  if (root === 'ZougenUchiwakeSho') return renderZougen(xml);
+  if (root === 'N7130001') return renderHyoujunHoushuu(xml);
+  if (root === 'DataRoot') return renderTodokeshoUtsushi(xml);
+  return `<div class="xsl-rendered-card"><p>対応外のXML形式です: ${esc(fileName)}</p></div>`;
+}
+
+function renderHokenryou(xml) {
+  const list = xml.getElementsByTagName('shakaiHokenRyougakuList')[0];
+  const hdr = list.getElementsByTagName('header')[0];
+  const g = (gg,y,m,d) => { const p=[(gg||'令和')+y+'年']; if(m)p.push(m+'月'); if(d)p.push(d+'日'); return p.join(''); };
+  const d = {
+    name:cleanBr(getTag(hdr,'jigyoshoName')), num:getTag(hdr,'jigyoshoNum'),
+    kigo:getTag(hdr,'jigyoshoSeiriKigo'), jimusho:getTag(hdr,'nenkinJimusho1'),
+    post:getTag(list,'jigyoushoPostCode'), addr:cleanBr(getTag(list,'jigyoushoShozaichi')),
+    mokuteki:g(getTag(list,'nouhuMokutekiYmGengou')||getTag(hdr,'nouhuMokutekiYearGengou'),
+      getTag(list,'nouhuMokutekiYmYear')||getTag(hdr,'nouhuMokutekiYear'),
+      getTag(list,'nouhuMokutekiYmMonth')||getTag(hdr,'nouhuMokutekiMonth')),
+    kigen:g(getTag(list,'nouhuKigenGengou'),getTag(list,'nouhuKigenYear'),getTag(list,'nouhuKigenMonth'),getTag(list,'nouhuKigenDate')),
+    hakkou:g(getTag(list,'hakkouYmdGengou'),getTag(list,'hakkouYmdYear'),getTag(list,'hakkouYmdMonth'),getTag(list,'hakkouYmdDate')),
+    kenkou:getTag(list,'kenkouHokenRyou'), nenkin:getTag(list,'kouseiNenkinHokenRyou'),
+    kodomo:getTag(list,'kodomoKosodateKyoshutsuKin'), total:getTag(list,'total'),
+    info:getTag(hdr,'oshirase'),
+  };
+  return `<div class="report-card">
+    <div class="report-header"><div class="report-doc-title">社会保険料額情報</div><div class="report-doc-sub">${d.mokuteki}分</div></div>
+    <div class="report-meta">
+      <div class="meta-section">
+        <div class="meta-label">事業所情報</div>
+        <div class="meta-row"><span class="meta-key">事業所名</span><span class="meta-val">${d.name}</span></div>
+        <div class="meta-row"><span class="meta-key">整理記号</span><span class="meta-val">${d.kigo}</span></div>
+        <div class="meta-row"><span class="meta-key">事業所番号</span><span class="meta-val">${d.num}</span></div>
+        <div class="meta-row"><span class="meta-key">年金事務所</span><span class="meta-val">${d.jimusho}</span></div>
+      </div>
+      <div class="meta-section">
+        <div class="meta-label">所在地</div>
+        <div class="meta-row"><span class="meta-key">〒</span><span class="meta-val">${d.post}</span></div>
+        <div class="meta-row"><span class="meta-val" style="text-align:left">${d.addr}</span></div>
+        <div style="height:12px"></div>
+        <div class="meta-label">発行情報</div>
+        <div class="meta-row"><span class="meta-key">発行日</span><span class="meta-val">${d.hakkou}</span></div>
+      </div>
+    </div>
+    <div class="amount-section">
+      <div class="amount-section-title">保険料内訳</div>
+      <table class="amount-table"><thead><tr><th>項目</th><th>金額（円）</th></tr></thead><tbody>
+        <tr class="${isZero(d.kenkou)?'zero-row':''}"><td>健康保険料</td><td>¥${fmtAmt(d.kenkou)}</td></tr>
+        <tr><td>厚生年金保険料</td><td>¥${fmtAmt(d.nenkin)}</td></tr>
+        <tr><td>子ども・子育て拠出金</td><td>¥${fmtAmt(d.kodomo)}</td></tr>
+        <tr class="total-row"><td>合計納付額</td><td>¥${fmtAmt(d.total)}</td></tr>
+      </tbody></table>
+    </div>
+    <div class="payment-bar">
+      <div class="payment-item"><span class="payment-label">納付対象月</span><span class="payment-value">${d.mokuteki}</span></div>
+      <div class="payment-item"><span class="payment-label">納付期限</span><span class="payment-value deadline">${d.kigen}</span></div>
+    </div>
+    ${d.info?`<div class="notice-section">${decodeHtml(d.info)}</div>`:''}
+  </div>`;
+}
+
+function renderKagami(xml) {
+  const body = xml.getElementsByTagName('BODY')[0];
+  const front = xml.getElementsByTagName('FRONT')[0];
+  const mainTexts = [], attachments = [];
+  if (body) {
+    for (const el of body.children) {
+      if (el.tagName && el.tagName.startsWith('MAINTXT'))
+        for (const p of el.getElementsByTagName('P')) mainTexts.push(p.textContent.trim());
+      if (el.tagName && el.tagName.startsWith('APPENDIX')) {
+        const doclink = el.getElementsByTagName('DOCLINK')[0];
+        const ref = doclink ? (doclink.getAttribute('REF') || doclink.textContent.trim()) : '';
+        attachments.push({ link:ref, title:getTag(el,'APPTITLE') });
+      }
+    }
+  }
+  const d = {
+    secrecy: front?getTag(front,'SECRECY'):'',
+    docNo: getTag(body,'DOCNO'), date: getTag(body,'DATE'),
+    toName: getTag(xml.getElementsByTagName('TO')[0]||body,'NAME'),
+    authorName: body?getTag(body.getElementsByTagName('AUTHOR')[0]||body,'n'):'',
+    authorAff: body?getTag(body.getElementsByTagName('AUTHOR')[0]||body,'AFF'):'',
+    title: getTag(body,'TITLE'),
+  };
+  const bodyTexts = mainTexts.slice(0,2);
+  const noticeTexts = mainTexts.slice(2);
+
+  // 添付ファイルリンクを生成（クリックでSwiftにファイル要求）
+  const attHtml = attachments.map(a => {
+    const fileName = a.link || a.title;
+    const ext = fileName.split('.').pop().toLowerCase();
+    const icon = ext === 'csv' ? '📊' : '📄';
+    return `<div class="kagami-attachment" onclick="requestFile('${esc(fileName)}')">
+      <div class="kagami-att-label">添付ファイル（クリックで開く）</div>
+      <div class="kagami-att-name">${icon} ${esc(a.title || a.link)}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="kagami-card">
+    <div class="kagami-header">
+      ${d.secrecy?`<div class="kagami-secrecy">${d.secrecy}</div>`:''}
+      <div class="kagami-doc-title">${d.title}</div>
+      <div class="kagami-date">${d.date}　｜　文書番号: ${d.docNo}</div>
+    </div>
+    <div class="kagami-from-to">
+      <div class="kagami-ft-section">
+        <div class="kagami-ft-label">宛先</div>
+        <div class="kagami-ft-name">${d.toName||'（事業主）'}</div>
+      </div>
+      <div class="kagami-ft-section">
+        <div class="kagami-ft-label">差出人</div>
+        <div class="kagami-ft-name">${d.authorName}</div>
+        <div class="kagami-ft-aff">${d.authorAff}</div>
+      </div>
+    </div>
+    <div class="kagami-body">
+      ${bodyTexts.map(t=>`<p>${decodeHtml(t)}</p>`).join('')}
+      ${attHtml}
+    </div>
+    ${noticeTexts.length?`<div class="kagami-notice">${noticeTexts.map(t=>`<p>${decodeHtml(t)}</p>`).join('')}</div>`:''}
+  </div>`;
+}
+
+// ===== 基本保険料算出内訳書 =====
+function renderKihonUchiwake(xml) {
+  const root = xml.documentElement;
+  const hdr = root.getElementsByTagName('header')[0];
+  const total = root.getElementsByTagName('total')[0];
+  const uchiwakes = root.getElementsByTagName('uchiwake');
+  const g = (gg,y,m) => (gg||'令和')+y+'年'+(m?m+'月':'');
+
+  const d = {
+    name: esc(getTag(hdr,'jigyoshoName').replace(/<br\/>/g,' ')),
+    num: getTag(hdr,'jigyoshoNum'),
+    kigo: getTag(hdr,'jigyoshoSeiriKigo'),
+    jimusho: getTag(hdr,'nenkinJimusho2').trim(),
+    mokuteki: g(getTag(hdr,'nouhuMokutekiYearGengou'),getTag(hdr,'nouhuMokutekiYear'),getTag(hdr,'nouhuMokutekiMonth')),
+    sakusei: g(getTag(hdr,'sakuseiYearGengou'),getTag(hdr,'sakuseiYear'),getTag(hdr,'sakuseiMonth'))+getTag(hdr,'sakuseiDate')+'日',
+    info: getTag(hdr,'oshirase'),
+  };
+
+  const kihonTotal = getTag(total,'kihonHokenRyouTotal');
+  const ippan = total.getElementsByTagName('kihonHokenRyouIppanGoukeiUchiwake')[0];
+  const nenkinAmt = ippan ? getTag(ippan,'kouseiNenkinHoken') : '';
+  const kodomoAmt = ippan ? getTag(ippan,'kodomoKosodateKyoshutsuKin') : '';
+  const kenkouAmt = ippan ? getTag(ippan,'kenkouHoken') : '';
+  const kaigoAmt = ippan ? getTag(ippan,'kaigoHokenSaikei') : '';
+
+  const nenkinTotal = total.getElementsByTagName('kouseiNenkinHoken')[0];
+  const nenkinTotalGaku = nenkinTotal ? getTag(nenkinTotal.getElementsByTagName('getsuGakuTotal')[0]||nenkinTotal,'getsuGaku') : '';
+  const nenkinTotalJin = nenkinTotal ? getTag(nenkinTotal.getElementsByTagName('getsuGakuTotal')[0]||nenkinTotal,'jinIn') : '';
+
+  let rows = '';
+  for (let i = 0; i < uchiwakes.length; i++) {
+    const u = uchiwakes[i];
+    const nenkin = u.getElementsByTagName('kouseiNenkinHoken')[0];
+    if (!nenkin) continue;
+    const rank = getTag(nenkin,'rank');
+    const hyoujyun = getTag(nenkin,'hyoujyunHoushuuGetsuGaku');
+    const gt = nenkin.getElementsByTagName('getsuGakuTotal')[0];
+    const g15 = nenkin.getElementsByTagName('getsuGakuType1Type5')[0];
+    const g26 = nenkin.getElementsByTagName('getsuGakuType2Type6')[0];
+    rows += `<tr>
+      <td style="text-align:center">${esc(rank)}</td>
+      <td style="text-align:right">${fmtAmt(hyoujyun)}千円</td>
+      <td style="text-align:right">${gt?getTag(gt,'jinIn'):''}</td>
+      <td style="text-align:right">${gt?fmtAmt(getTag(gt,'getsuGaku')):''}</td>
+      <td style="text-align:right">${g15?getTag(g15,'jinIn'):''}</td>
+      <td style="text-align:right">${g15?fmtAmt(getTag(g15,'getsuGaku')):''}</td>
+      <td style="text-align:right">${g26?getTag(g26,'jinIn'):''}</td>
+      <td style="text-align:right">${g26?fmtAmt(getTag(g26,'getsuGaku')):''}</td>
+    </tr>`;
+  }
+
+  return `
+  <div class="report-card">
+    <div class="report-header">
+      <div class="report-doc-title">基本保険料算出内訳書</div>
+      <div class="report-doc-sub">${d.mokuteki}分</div>
+    </div>
+    <div class="report-meta">
+      <div class="meta-section">
+        <div class="meta-label">事業所情報</div>
+        <div class="meta-row"><span class="meta-key">事業所名</span><span class="meta-val">${d.name}</span></div>
+        <div class="meta-row"><span class="meta-key">整理記号</span><span class="meta-val">${d.kigo}</span></div>
+        <div class="meta-row"><span class="meta-key">事業所番号</span><span class="meta-val">${d.num}</span></div>
+        <div class="meta-row"><span class="meta-key">年金事務所</span><span class="meta-val">${d.jimusho}</span></div>
+      </div>
+      <div class="meta-section">
+        <div class="meta-label">作成情報</div>
+        <div class="meta-row"><span class="meta-key">作成日</span><span class="meta-val">${d.sakusei}</span></div>
+      </div>
+    </div>
+    <div class="amount-section">
+      <div class="amount-section-title">基本保険料合計</div>
+      <table class="amount-table"><thead><tr><th>項目</th><th>金額（円）</th></tr></thead><tbody>
+        <tr class="${isZero(kenkouAmt)?'zero-row':''}"><td>健康保険料</td><td>¥${fmtAmt(kenkouAmt)}</td></tr>
+        <tr class="${isZero(kaigoAmt)?'zero-row':''}"><td>介護保険料</td><td>¥${fmtAmt(kaigoAmt)}</td></tr>
+        <tr><td>厚生年金保険料</td><td>¥${fmtAmt(nenkinAmt)}</td></tr>
+        <tr><td>子ども・子育て拠出金</td><td>¥${fmtAmt(kodomoAmt)}</td></tr>
+        <tr class="total-row"><td>基本保険料合計</td><td>¥${fmtAmt(kihonTotal)}</td></tr>
+      </tbody></table>
+    </div>
+    <div class="amount-section">
+      <div class="amount-section-title">厚生年金 等級別内訳（合計: ${nenkinTotalJin}人 / ${fmtAmt(nenkinTotalGaku)}千円）</div>
+      <table class="amount-table" style="font-size:12px"><thead><tr>
+        <th style="text-align:center">等級</th><th style="text-align:right">標準報酬月額</th>
+        <th style="text-align:right">合計人数</th><th style="text-align:right">合計月額</th>
+        <th style="text-align:right">1種人数</th><th style="text-align:right">1種月額</th>
+        <th style="text-align:right">2種人数</th><th style="text-align:right">2種月額</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+    </div>
+    ${d.info?`<div class="notice-section">${decodeHtml(d.info)}</div>`:''}
+  </div>`;
+}
+
+// ===== 増減内訳書 =====
+function renderZougen(xml) {
+  const root = xml.documentElement;
+  const hdr = root.getElementsByTagName('header')[0];
+  const shuukei = root.getElementsByTagName('shuukei')[0];
+  const kojins = root.getElementsByTagName('kojinbetsuUchiwake');
+  const g = (gg,y,m) => (gg||'令和')+y+'年'+(m?m+'月':'');
+
+  const d = {
+    name: esc(getTag(hdr,'jigyoshoName').replace(/<br\/>/g,' ')),
+    num: getTag(hdr,'jigyoshoNum'),
+    kigo: getTag(hdr,'jigyoshoSeiriKigo'),
+    jimusho: getTag(hdr,'nenkinJimusho2').trim(),
+    jinIn: getTag(hdr,'jinInNum'),
+    mokuteki: g(getTag(hdr,'nouhuMokutekiYearGengou'),getTag(hdr,'nouhuMokutekiYear'),getTag(hdr,'nouhuMokutekiMonth')),
+    info: getTag(hdr,'oshirase'),
+  };
+
+  function getShuukeiData(tagName) {
+    const el = shuukei ? shuukei.getElementsByTagName(tagName)[0] : null;
+    if (!el) return { kokuchiGaku:'0', kihon:'0', zougenHoken:'0', zougenShouyo:'0' };
+    return {
+      kokuchiGaku: getTag(el,'kokuchiGaku'),
+      kihon: getTag(el,'kihonHokenRyou'),
+      zougenHoken: getTag(el,'hongetsuZougenGakuHokenRyou'),
+      zougenShouyo: getTag(el,'hongetsuZougenGakuShouyo'),
+    };
+  }
+  const kenkou = getShuukeiData('kenkouHokenRyou');
+  const nenkin = getShuukeiData('kouseiNenkinHokenRyou');
+  const kodomo = getShuukeiData('kodomoKosodateKyoshutsuKin');
+  const kaigo = getShuukeiData('kaigoHokenRyou');
+
+  let kojinRows = '';
+  for (let i = 0; i < kojins.length; i++) {
+    const k = kojins[i];
+    const shimei = getTag(k,'shimei').trim();
+    const shoriYMD = getTag(k,'shoriYMD');
+    const kenHon = getTag(k.getElementsByTagName('kenKouHokenRyou')[0]||k,'hongetsuGaku').trim();
+    const kenZen = getTag(k.getElementsByTagName('kenKouHokenRyou')[0]||k,'zengetsuIzenKingaku').trim();
+    const nenHon = getTag(k.getElementsByTagName('kouseiNenkinHokenRyou')[0]||k,'hongetsuGaku').trim();
+    const nenZen = getTag(k.getElementsByTagName('kouseiNenkinHokenRyou')[0]||k,'zengetsuIzenKingaku').trim();
+    kojinRows += `<tr>
+      <td>${esc(shimei)}</td><td style="font-size:11px;color:var(--text-muted)">${esc(shoriYMD)}</td>
+      <td style="text-align:right">${esc(kenHon)}</td><td style="text-align:right">${esc(kenZen)}</td>
+      <td style="text-align:right">${esc(nenHon)}</td><td style="text-align:right">${esc(nenZen)}</td>
+    </tr>`;
+  }
+
+  return `
+  <div class="report-card">
+    <div class="report-header">
+      <div class="report-doc-title">保険料増減内訳書</div>
+      <div class="report-doc-sub">${d.mokuteki}分</div>
+    </div>
+    <div class="report-meta">
+      <div class="meta-section">
+        <div class="meta-label">事業所情報</div>
+        <div class="meta-row"><span class="meta-key">事業所名</span><span class="meta-val">${d.name}</span></div>
+        <div class="meta-row"><span class="meta-key">整理記号</span><span class="meta-val">${d.kigo}</span></div>
+        <div class="meta-row"><span class="meta-key">事業所番号</span><span class="meta-val">${d.num}</span></div>
+        <div class="meta-row"><span class="meta-key">年金事務所</span><span class="meta-val">${d.jimusho}</span></div>
+      </div>
+      <div class="meta-section">
+        <div class="meta-label">概要</div>
+        <div class="meta-row"><span class="meta-key">被保険者数</span><span class="meta-val">${d.jinIn}人</span></div>
+      </div>
+    </div>
+    <div class="amount-section">
+      <div class="amount-section-title">保険料集計（通知額）</div>
+      <table class="amount-table"><thead><tr><th>項目</th><th style="text-align:right">基本保険料</th><th style="text-align:right">増減(保険料)</th><th style="text-align:right">増減(賞与)</th><th style="text-align:right">通知額</th></tr></thead><tbody>
+        <tr class="${isZero(kenkou.kokuchiGaku)?'zero-row':''}"><td>健康保険料</td><td style="text-align:right">¥${fmtAmt(kenkou.kihon)}</td><td style="text-align:right">¥${fmtAmt(kenkou.zougenHoken)}</td><td style="text-align:right">¥${fmtAmt(kenkou.zougenShouyo)}</td><td style="text-align:right;font-weight:600">¥${fmtAmt(kenkou.kokuchiGaku)}</td></tr>
+        <tr class="${isZero(kaigo.kokuchiGaku)?'zero-row':''}"><td>介護保険料</td><td style="text-align:right">¥${fmtAmt(kaigo.kihon)}</td><td style="text-align:right">¥${fmtAmt(kaigo.zougenHoken)}</td><td style="text-align:right">¥${fmtAmt(kaigo.zougenShouyo)}</td><td style="text-align:right;font-weight:600">¥${fmtAmt(kaigo.kokuchiGaku)}</td></tr>
+        <tr><td>厚生年金保険料</td><td style="text-align:right">¥${fmtAmt(nenkin.kihon)}</td><td style="text-align:right">¥${fmtAmt(nenkin.zougenHoken)}</td><td style="text-align:right">¥${fmtAmt(nenkin.zougenShouyo)}</td><td style="text-align:right;font-weight:600">¥${fmtAmt(nenkin.kokuchiGaku)}</td></tr>
+        <tr><td>子ども・子育て拠出金</td><td style="text-align:right">¥${fmtAmt(kodomo.kihon)}</td><td style="text-align:right">¥${fmtAmt(kodomo.zougenHoken)}</td><td style="text-align:right">¥${fmtAmt(kodomo.zougenShouyo)}</td><td style="text-align:right;font-weight:600">¥${fmtAmt(kodomo.kokuchiGaku)}</td></tr>
+      </tbody></table>
+    </div>
+    ${kojinRows ? `<div class="amount-section">
+      <div class="amount-section-title">個人別内訳</div>
+      <table class="amount-table" style="font-size:12px"><thead><tr>
+        <th>氏名/区分</th><th>処理日</th>
+        <th style="text-align:right">健保(本月)</th><th style="text-align:right">健保(前月以前)</th>
+        <th style="text-align:right">厚年(本月)</th><th style="text-align:right">厚年(前月以前)</th>
+      </tr></thead><tbody>${kojinRows}</tbody></table>
+    </div>` : ''}
+    ${d.info?`<div class="notice-section">${decodeHtml(d.info)}</div>`:''}
+  </div>`;
+}
+
+// ===== 標準報酬決定通知書 =====
+function renderHyoujunHoushuu(xml) {
+  const persons = xml.getElementsByTagName('_被保険者');
+  if (persons.length === 0) return '<div class="xsl-rendered-card"><p>被保険者データがありません</p></div>';
+
+  const first = persons[0];
+  const d = {
+    date: getTag(first,'通知年月日').trim(),
+    company: getTag(first,'事業所名称_送付先').trim(),
+    owner: getTag(first,'事業主氏名_送付先').trim(),
+    post: getTag(first,'事業所郵便番号_送付先'),
+    addr: getTag(first,'事業所所在地_送付先').trim(),
+    addr1: getTag(first,'事業所所在地_送付先1').trim(),
+    kigo: getTag(first,'事業所整理記号'),
+    num: getTag(first,'事業所番号'),
+    jimusho: getTag(first,'年金事務所名').trim(),
+    notice: getTag(first,'機構からのお知らせ').trim(),
+    toutatsu: getTag(first,'到達番号_項目'),
+  };
+
+  function eraToText(code) {
+    const map = {'M':'明治','T':'大正','S':'昭和','H':'平成','R':'令和'};
+    return map[code] || code;
+  }
+
+  let rows = '';
+  for (let i = 0; i < persons.length; i++) {
+    const p = persons[i];
+    const name = getTag(p,'被保険者氏名').trim();
+    const seiriNo = getTag(p,'被保険者整理番号').trim();
+    const era = getTag(p,'適用年月_元号');
+    const year = getTag(p,'適用年月_年');
+    const month = getTag(p,'適用年月_月');
+    const tekiyou = eraToText(era) + year + '年' + parseInt(month) + '月';
+    const kenpo = getTag(p,'決定後の標準報酬月額_健保').trim();
+    const kounen = getTag(p,'決定後の標準報酬月額_厚年').trim();
+    const shubetsu = getTag(p,'種別').trim();
+    const bEra = getTag(p,'生年月日_元号');
+    const bY = getTag(p,'生年月日_年');
+    const bM = getTag(p,'生年月日_月');
+    const bD = getTag(p,'生年月日_日');
+    const birth = eraToText(bEra)+bY+'.'+bM+'.'+bD;
+    rows += `<tr>
+      <td style="text-align:center">${esc(seiriNo)}</td>
+      <td>${esc(name)}</td>
+      <td style="text-align:center;font-size:11px">${esc(birth)}</td>
+      <td style="text-align:center">${esc(shubetsu)}</td>
+      <td style="text-align:center">${esc(tekiyou)}</td>
+      <td style="text-align:right">${esc(kenpo)}</td>
+      <td style="text-align:right;font-weight:500">${esc(kounen)}</td>
+    </tr>`;
+  }
+
+  return `
+  <div class="report-card">
+    <div class="report-header">
+      <div class="report-doc-title">標準報酬決定通知書</div>
+      <div class="report-doc-sub">${esc(d.date)}</div>
+    </div>
+    <div class="report-meta">
+      <div class="meta-section">
+        <div class="meta-label">事業所情報</div>
+        <div class="meta-row"><span class="meta-key">事業所名</span><span class="meta-val">${esc(d.company)}</span></div>
+        <div class="meta-row"><span class="meta-key">事業主</span><span class="meta-val">${esc(d.owner)}</span></div>
+        <div class="meta-row"><span class="meta-key">整理記号</span><span class="meta-val">${esc(d.kigo)}</span></div>
+        <div class="meta-row"><span class="meta-key">事業所番号</span><span class="meta-val">${esc(d.num)}</span></div>
+      </div>
+      <div class="meta-section">
+        <div class="meta-label">所在地</div>
+        <div class="meta-row"><span class="meta-key">〒</span><span class="meta-val">${esc(d.post)}</span></div>
+        <div class="meta-row"><span class="meta-val" style="text-align:left">${esc(d.addr)} ${esc(d.addr1)}</span></div>
+        <div style="height:12px"></div>
+        <div class="meta-label">管轄</div>
+        <div class="meta-row"><span class="meta-key">年金事務所</span><span class="meta-val">${esc(d.jimusho)}</span></div>
+        <div class="meta-row"><span class="meta-key">到達番号</span><span class="meta-val" style="font-size:11px">${esc(d.toutatsu)}</span></div>
+      </div>
+    </div>
+    <div class="amount-section">
+      <div class="amount-section-title">被保険者一覧（${persons.length}名）</div>
+      <table class="notify-table"><thead><tr>
+        <th style="text-align:center">整理番号</th>
+        <th>氏名</th>
+        <th style="text-align:center">生年月日</th>
+        <th style="text-align:center">種別</th>
+        <th style="text-align:center">適用年月</th>
+        <th style="text-align:right">健保</th>
+        <th style="text-align:right">厚年</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+    </div>
+    ${d.notice?`<div class="notice-section">${esc(d.notice)}</div>`:''}
+  </div>`;
+}
+
+// ===== 算定基礎届提出届書写し =====
+function renderTodokeshoUtsushi(xml) {
+  const root = xml.documentElement;
+  let data = null;
+  for (const child of root.children) {
+    if (child.tagName && child.tagName.startsWith('A-')) { data = child; break; }
+  }
+  if (!data) return '<div class="xsl-rendered-card"><p>届書データが見つかりません</p></div>';
+
+  function getDateFromEl(parent, tagName) {
+    const el = parent.getElementsByTagName(tagName)[0];
+    if (!el) return '';
+    return '令和' + getTag(el,'年') + '年' + getTag(el,'月') + '月' + getTag(el,'日') + '日';
+  }
+
+  function getPhone() {
+    const tel = data.getElementsByTagName('電話番号')[0];
+    if (!tel) return '';
+    return getTag(tel,'市外局番') + '-' + getTag(tel,'局番') + '-' + getTag(tel,'番号');
+  }
+
+  const d = {
+    sakusei: getDateFromEl(data,'作成年月日'),
+    teishutsu: getDateFromEl(data,'提出年月日'),
+    kigo: getTag(data,'事業所整理記号x郡市区記号') + '-' + getTag(data,'事業所整理記号x事業所記号'),
+    num: getTag(data,'事業所番号'),
+    addr: getTag(data,'事業所所在地'),
+    post: getTag(data,'事業所所在地x郵便番号x親番号') + '-' + getTag(data,'事業所所在地x郵便番号x子番号'),
+    name: getTag(data,'事業所名称'),
+    owner: getTag(data,'事業主氏名'),
+    phone: getPhone(),
+    sharoshi: getTag(data,'社会保険労務士の提出代行者名'),
+  };
+
+  const items = [
+    { label:'資格取得届', tag:'届書総件数x資格取得届70歳以上被用者該当届' },
+    { label:'被扶養者異動届', tag:'届書数x被扶養者異動国年3号被保険者関係届' },
+    { label:'資格喪失届', tag:'届書数x資格喪失届70歳以上被用者不該当届' },
+    { label:'月額変更届', tag:'届書数x月額変更届70歳以上被用者月額変更届' },
+    { label:'算定基礎届', tag:'届書数x算定基礎届70歳以上被用者算定基礎届' },
+    { label:'賞与支払届', tag:'届書数x賞与支払届70歳以上被用者賞与支払届' },
+    { label:'育児休業等取得者申出書', tag:'届書数x育児休業等取得者申出書終了届' },
+    { label:'産前産後休業取得者申出書', tag:'届書数x産前産後休業取得者申出書変更届' },
+  ];
+  const totalCount = getTag(data,'届書総件数x届書合計');
+
+  let itemsHtml = '';
+  items.forEach(item => {
+    const count = getTag(data, item.tag);
+    itemsHtml += `<div class="todoke-item"><span>${esc(item.label)}</span><span class="todoke-count ${isZero(count)?'zero':''}">${esc(count||'0')}件</span></div>`;
+  });
+
+  return `
+  <div class="report-card">
+    <div class="report-header">
+      <div class="report-doc-title">届書写し</div>
+      <div class="report-doc-sub">届書合計 ${esc(totalCount)}件</div>
+    </div>
+    <div class="report-meta">
+      <div class="meta-section">
+        <div class="meta-label">事業所情報</div>
+        <div class="meta-row"><span class="meta-key">事業所名</span><span class="meta-val">${esc(d.name)}</span></div>
+        <div class="meta-row"><span class="meta-key">事業主</span><span class="meta-val">${esc(d.owner)}</span></div>
+        <div class="meta-row"><span class="meta-key">整理記号</span><span class="meta-val">${esc(d.kigo)}</span></div>
+        <div class="meta-row"><span class="meta-key">事業所番号</span><span class="meta-val">${esc(d.num)}</span></div>
+        <div class="meta-row"><span class="meta-key">電話番号</span><span class="meta-val">${esc(d.phone)}</span></div>
+      </div>
+      <div class="meta-section">
+        <div class="meta-label">所在地</div>
+        <div class="meta-row"><span class="meta-key">〒</span><span class="meta-val">${esc(d.post)}</span></div>
+        <div class="meta-row"><span class="meta-val" style="text-align:left">${esc(d.addr)}</span></div>
+        <div style="height:12px"></div>
+        <div class="meta-label">提出情報</div>
+        <div class="meta-row"><span class="meta-key">作成日</span><span class="meta-val">${d.sakusei}</span></div>
+        <div class="meta-row"><span class="meta-key">提出日</span><span class="meta-val">${d.teishutsu}</span></div>
+        ${d.sharoshi?`<div class="meta-row"><span class="meta-key">社労士</span><span class="meta-val">${esc(d.sharoshi)}</span></div>`:''}
+      </div>
+    </div>
+    <div class="amount-section">
+      <div class="amount-section-title">届書種類別件数</div>
+      <div class="todoke-grid">${itemsHtml}</div>
+    </div>
+  </div>`;
+}
+</script>
+</body>
+</html>

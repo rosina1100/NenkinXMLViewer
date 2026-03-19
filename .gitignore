@@ -1,0 +1,16 @@
+# Xcode
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# SourceFiles (initial scaffolding, no longer needed)
+SourceFiles/
+SETUP_GUIDE.md
