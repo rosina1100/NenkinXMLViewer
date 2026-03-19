@@ -2,7 +2,7 @@
 
 日本年金機構から届く XML 形式の公文書を、macOS でワンクリックで閲覧できるネイティブアプリです。
 
-<img width="860" alt="screenshot" src="https://github.com/user-attachments/assets/placeholder">
+<img width="2962" height="2542" alt="screenshot" src="https://github.com/user-attachments/assets/b94d2171-6b18-4aad-a866-d1cd6e9cdf1d" />
 
 ## なぜこのアプリが必要か
 
